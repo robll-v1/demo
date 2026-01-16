@@ -53,6 +53,16 @@ Required CSV columns:
 Optional columns:
 - `lane`
 
+## Generate robot CSVs (synthetic)
+
+You can also generate synthetic robot paths as CSVs:
+
+```bash
+python3 generate_robot_csv.py --out-dir data/csv_robot --episodes 5 --pattern zigzag
+python3 import_csv_to_hdf5.py --csv-dir data/csv_robot --out data/trajectories.h5
+python3 analyze_demo.py --plot
+```
+
 ## Export TFDS dataset
 
 To export a formal TFDS dataset (TFRecord + dataset_info):
