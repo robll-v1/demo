@@ -1,0 +1,16 @@
+Trajectory summary
+Episodes: 763
+Success rate: 100.0%
+Path length (avg): 21.52
+Total reward (avg): 0.00
+Mean step (avg): 0.11
+Total steps: 152500
+Avg steps per episode: 199.87
+Action magnitude (avg): 0.11
+Action smoothness (avg): 0.17
+Action quality (avg): 0.852
+Anomalies (count): 14
+Clusters: {2: 369, 1: 382, 0: 12}
+File size (bytes): 14777071
+Read+analysis time (s): 2.109
+RLDS episodes loaded: 763

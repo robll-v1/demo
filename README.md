@@ -36,10 +36,40 @@ python3 analyze_demo.py --plot --plot-samples 20
 python3 analyze_demo.py --export outputs/rlds_episodes.jsonl
 ```
 
+5) Save stats to SQLite
+
+```bash
+python3 analyze_demo.py --data data/robotic_arm.h5 --sqlite outputs/trajectory_stats.db
+```
+
+6) Write stats to InfluxDB (optional)
+
+```bash
+python3 -m pip install influxdb-client
+python3 analyze_demo.py \
+  --data data/robotic_arm.h5 \
+  --influx-url http://localhost:8086 \
+  --influx-token YOUR_TOKEN \
+  --influx-org YOUR_ORG \
+  --influx-bucket YOUR_BUCKET
+```
+
 Outputs:
 - HDF5 file: `data/trajectories.h5`
 - Plots: `outputs/trajectories.png`
 - RLDS-style JSONL: `outputs/rlds_episodes.jsonl`
+- Analysis logs include action quality, anomaly count, cluster summary, and lane stats (if present).
+- Streaming mode supports large datasets without building RLDS episodes.
+
+## Streaming stats (large data)
+
+For very large datasets, avoid building RLDS episodes in memory:
+
+```bash
+python3 analyze_demo.py --data data/robotic_arm.h5 --stream --log auto --sqlite outputs/trajectory_stats.db
+```
+
+Note: `--stream` disables `--export`.
 
 ## Import CSV trajectories
 
