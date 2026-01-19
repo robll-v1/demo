@@ -16,6 +16,11 @@ def load_csv_episode(path):
     if not rows:
         raise ValueError(f"No rows in {path}")
 
+    required = {"timestamp", "x", "y", "velocity"}
+    missing = required - set(rows[0].keys())
+    if missing:
+        missing_list = ", ".join(sorted(missing))
+        raise ValueError(f"Missing required columns in {path}: {missing_list}")
     has_lane = "lane" in rows[0]
     observations = []
     timestamps = []

@@ -13,6 +13,11 @@ def load_rows(path):
             rows.append(row)
     if not rows:
         raise ValueError(f"No rows in {path}")
+    required = {"Axis_0_Angle", "Axis_1_Angle", "Axis_2_Angle"}
+    missing = required - set(rows[0].keys())
+    if missing:
+        missing_list = ", ".join(sorted(missing))
+        raise ValueError(f"Missing required columns in {path}: {missing_list}")
     return rows
 
 

@@ -28,7 +28,12 @@ def main():
 
     with h5py.File(data_path, "r") as h5:
         # 推断观测与动作维度。
-        first = next(iter(h5["episodes"].values()))
+        if "episodes" not in h5:
+            raise SystemExit("Invalid HDF5 file: missing 'episodes' group.")
+        episodes = list(h5["episodes"].values())
+        if not episodes:
+            raise SystemExit("Invalid HDF5 file: no episodes found.")
+        first = episodes[0]
         obs_dim = int(first["observations"].shape[1])
         act_dim = int(first["actions"].shape[1])
         has_timestamps = "timestamps" in first

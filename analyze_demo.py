@@ -173,7 +173,7 @@ def plot_trajectories(path, out_path, max_episodes=20, joint_index=0, stats_over
     # 绘制关节角曲线与分布图（单关节，避免过密）。
     import matplotlib.pyplot as plt
 
-    max_episodes = min(max_episodes, 1)
+    max_episodes = max(1, int(max_episodes))
     sampled = []
     obs_dim = None
     for idx, (obs, _, _, _, timestamps, _) in enumerate(load_hdf5(path)):
