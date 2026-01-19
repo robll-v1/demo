@@ -24,6 +24,12 @@ python3 analyze_demo.py
 python3 analyze_demo.py --plot
 ```
 
+To limit how many episodes are drawn (avoid overplotting):
+
+```bash
+python3 analyze_demo.py --plot --plot-samples 20
+```
+
 4) Export RLDS-style episodes (JSONL)
 
 ```bash
@@ -63,6 +69,19 @@ python3 import_csv_to_hdf5.py --csv-dir data/csv_robot --out data/trajectories.h
 python3 analyze_demo.py --plot
 ```
 
+## Import Kaggle robotic arm dataset
+
+If you downloaded the Kaggle dataset `meghrajbagde/robotic-arm-dataset-multiple-trajectories`,
+use this script to convert the single CSV into HDF5 episodes:
+
+```bash
+python3 import_kaggle_robotic_arm.py \
+  --csv /path/to/robotic_arm_dataset_multiple_trajectories.csv \
+  --out data/robotic_arm.h5 \
+  --episode-length 200
+python3 analyze_demo.py --data data/robotic_arm.h5 --plot
+```
+
 ## Export TFDS dataset
 
 To export a formal TFDS dataset (TFRecord + dataset_info):
@@ -81,8 +100,7 @@ python3 -m pip install tensorflow tensorflow-datasets
 
 - The adapter uses RLDS constants if `rlds` is installed; otherwise it falls
   back to string keys with the same names.
-- The trajectories are a 2D point robot moving toward a goal with noise.
-- If lane data is present (CSV with `lane`), plots include lane counts and speed distribution.
+- The trajectories can be 2D paths or robot arm joint angles. The plots show joint angles over time plus joint-space statistics.
 
 ## Requirements
 

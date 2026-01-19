@@ -56,14 +56,12 @@ def analyze(path):
     stats = []
     episodes = []
     for obs, actions, rewards, dones, timestamps, meta in load_hdf5(path):
-        delta = np.diff(obs[:, :2], axis=0)
+        # 关节空间路径长度：相邻关节角变化的 L2 距离。
+        delta = np.diff(obs, axis=0)
         path_length = np.sum(np.linalg.norm(delta, axis=1))
         total_reward = np.sum(rewards)
-        if obs.shape[1] == 4:
-            speed = np.mean(obs[:, 2])
-        else:
-            speed = np.mean(np.linalg.norm(obs[:, 2:4], axis=1))
-        stats.append((path_length, total_reward, speed, meta["success"]))
+        avg_step = np.mean(np.linalg.norm(delta, axis=1)) if len(delta) else 0.0
+        stats.append((path_length, total_reward, avg_step, meta["success"]))
         steps = to_rlds_steps(obs, actions, rewards, dones, timestamps)
         episodes.append(build_rlds_episode(steps, meta))
 
@@ -74,44 +72,11 @@ def analyze(path):
     return stats_arr, episodes
 
 
-def _extract_lane(obs):
-    # 仅当 obs 形状匹配 CSV（x,y,velocity,lane）时提取车道。
-    if obs.shape[1] == 4:
-        return obs[:, 3].astype(np.int32)
-    return None
-
-
-def collect_lane_info(path):
-    # 汇总车道级别统计（步数与均速）。
-    lane_counts = {}
-    lane_speed_sum = {}
-    lane_speed_count = {}
-
-    for obs, _, _, _, _, _ in load_hdf5(path):
-        lanes = _extract_lane(obs)
-        if lanes is None:
-            continue
-        speeds = obs[:, 2]
-        for lane, speed in zip(lanes, speeds):
-            lane_counts[lane] = lane_counts.get(lane, 0) + 1
-            lane_speed_sum[lane] = lane_speed_sum.get(lane, 0.0) + float(speed)
-            lane_speed_count[lane] = lane_speed_count.get(lane, 0) + 1
-
-    if not lane_counts:
-        return None
-
-    lane_mean_speed = {
-        lane: lane_speed_sum[lane] / lane_speed_count[lane]
-        for lane in lane_speed_sum
-    }
-    return {"counts": lane_counts, "mean_speed": lane_mean_speed}
-
-
 def summarize(stats, lane_info):
     # 打印轨迹统计摘要。
     path_len = stats[:, 0]
     total_reward = stats[:, 1]
-    speed = stats[:, 2]
+    avg_step = stats[:, 2]
     success = stats[:, 3]
 
     print("Trajectory summary")
@@ -119,83 +84,62 @@ def summarize(stats, lane_info):
     print(f"Success rate: {np.mean(success) * 100:.1f}%")
     print(f"Path length (avg): {np.mean(path_len):.2f}")
     print(f"Total reward (avg): {np.mean(total_reward):.2f}")
-    print(f"Mean speed (avg): {np.mean(speed):.2f}")
-    if lane_info is not None:
-        print("Lane stats:")
-        for lane in sorted(lane_info["counts"].keys()):
-            count = lane_info["counts"][lane]
-            mean_speed = lane_info["mean_speed"][lane]
-            print(f"  lane {lane}: steps={count}, mean_speed={mean_speed:.2f}")
+    print(f"Mean step (avg): {np.mean(avg_step):.2f}")
 
 
-def plot_trajectories(path, out_path):
-    # 绘制轨迹与分布图。
+def plot_trajectories(path, out_path, max_episodes=20):
+    # 绘制关节角曲线与分布图（每个关节单独子图）。
     import matplotlib.pyplot as plt
 
-    lane_info = collect_lane_info(path)
-    if lane_info is None:
-        fig, ax = plt.subplots(1, 2, figsize=(10, 4), dpi=120)
-        ax_traj = ax[0]
-        ax_dist = ax[1]
-        ax_speed = None
-        ax_lane = None
-    else:
-        fig, ax = plt.subplots(2, 2, figsize=(10, 7), dpi=120)
-        ax_traj = ax[0, 0]
-        ax_dist = ax[0, 1]
-        ax_speed = ax[1, 0]
-        ax_lane = ax[1, 1]
-    goal_points = []
-    success_flags = []
-    all_speeds = []
+    sampled = []
+    obs_dim = None
+    for idx, (obs, _, _, _, timestamps, _) in enumerate(load_hdf5(path)):
+        if idx >= max_episodes:
+            break
+        sampled.append((obs, timestamps))
+        if obs_dim is None:
+            obs_dim = obs.shape[1]
 
-    for obs, _, _, _, _, meta in load_hdf5(path):
-        ax_traj.plot(obs[:, 0], obs[:, 1], alpha=0.7, color="#3b6ea5")
-        if lane_info is not None:
-            lanes = _extract_lane(obs)
-            ax_traj.scatter(
-                obs[:, 0],
-                obs[:, 1],
-                c=lanes,
-                cmap="tab10",
-                s=12,
-                alpha=0.9,
-            )
-        goal_points.append(meta["goal"])
-        success_flags.append(meta["success"])
-        if obs.shape[1] == 4:
-            all_speeds.extend(obs[:, 2].tolist())
-        else:
-            all_speeds.extend(np.linalg.norm(obs[:, 2:4], axis=1).tolist())
+    if not sampled:
+        return
 
-    goal_points = np.asarray(goal_points)
-    success_flags = np.asarray(success_flags)
+    rows = obs_dim + 1
+    fig, ax = plt.subplots(rows, 2, figsize=(10, 2.6 * rows), dpi=120)
 
-    ax_traj.scatter(goal_points[:, 0], goal_points[:, 1], c=success_flags, cmap="coolwarm")
-    ax_traj.set_title("Trajectories and goals")
-    ax_traj.set_xlabel("x")
-    ax_traj.set_ylabel("y")
-    ax_traj.axis("equal")
+    step_mags = []
+    for obs, _ in sampled:
+        if len(obs) > 1:
+            step = np.linalg.norm(np.diff(obs, axis=0), axis=1)
+            step_mags.extend(step.tolist())
+
+    for j in range(obs_dim):
+        ax_time = ax[j, 0]
+        ax_hist = ax[j, 1]
+        joint_vals = []
+        for obs, timestamps in sampled:
+            t = timestamps if timestamps is not None else np.arange(len(obs))
+            ax_time.plot(t, obs[:, j], alpha=0.7, linewidth=1.0)
+            joint_vals.append(obs[:, j])
+        joint_vals = np.concatenate(joint_vals, axis=0)
+        ax_time.set_title(f"Joint {j} angle over time")
+        ax_time.set_xlabel("time step")
+        ax_time.set_ylabel("angle")
+        ax_hist.hist(joint_vals, bins=20, alpha=0.8, color="#557a2d")
+        ax_hist.set_title(f"Joint {j} angle distribution")
+        ax_hist.set_xlabel("angle")
+        ax_hist.set_ylabel("count")
 
     stats, _ = analyze(path)
-    ax_dist.hist(stats[:, 0], bins=10, alpha=0.8)
-    ax_dist.set_title("Path length distribution")
-    ax_dist.set_xlabel("path length")
-    ax_dist.set_ylabel("count")
-
-    if ax_speed is not None:
-        ax_speed.hist(all_speeds, bins=10, alpha=0.8, color="#557a2d")
-        ax_speed.set_title("Speed distribution")
-        ax_speed.set_xlabel("speed")
-        ax_speed.set_ylabel("count")
-
-    if ax_lane is not None and lane_info is not None:
-        lanes = sorted(lane_info["counts"].keys())
-        counts = [lane_info["counts"][lane] for lane in lanes]
-        ax_lane.bar([str(l) for l in lanes], counts, color="#7a4f9e", alpha=0.8)
-        ax_lane.set_title("Lane step counts")
-        ax_lane.set_xlabel("lane")
-        ax_lane.set_ylabel("steps")
+    ax_len = ax[rows - 1, 0]
+    ax_step = ax[rows - 1, 1]
+    ax_len.hist(stats[:, 0], bins=10, alpha=0.8)
+    ax_len.set_title("Joint-space path length")
+    ax_len.set_xlabel("path length")
+    ax_len.set_ylabel("count")
+    ax_step.hist(step_mags, bins=20, alpha=0.8, color="#7a4f9e")
+    ax_step.set_title("Step magnitude distribution")
+    ax_step.set_xlabel("delta angle")
+    ax_step.set_ylabel("count")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
@@ -242,6 +186,7 @@ def main():
     parser.add_argument("--data", default="data/trajectories.h5")
     parser.add_argument("--plot", action="store_true")
     parser.add_argument("--out", default="outputs/trajectories.png")
+    parser.add_argument("--plot-samples", type=int, default=20)
     parser.add_argument("--export", default=None, help="Export RLDS episodes to JSON or JSONL.")
     args = parser.parse_args()
 
@@ -249,12 +194,11 @@ def main():
     if len(stats) == 0:
         print("No episodes found.")
         return
-    lane_info = collect_lane_info(Path(args.data))
-    summarize(stats, lane_info)
+    summarize(stats, None)
     print(f"RLDS episodes loaded: {len(episodes)}")
 
     if args.plot:
-        plot_trajectories(Path(args.data), Path(args.out))
+        plot_trajectories(Path(args.data), Path(args.out), max_episodes=args.plot_samples)
         print(f"Saved plot to {args.out}")
     if args.export:
         export_episodes(episodes, Path(args.export))
