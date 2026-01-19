@@ -1,5 +1,7 @@
 import argparse
 import json
+import time
+from datetime import datetime
 from pathlib import Path
 
 import h5py
@@ -55,6 +57,7 @@ def analyze(path):
     # 从 HDF5 读入 -> 转成 RLDS -> 计算轨迹统计。
     stats = []
     episodes = []
+    total_steps = 0
     for obs, actions, rewards, dones, timestamps, meta in load_hdf5(path):
         # 关节空间路径长度：相邻关节角变化的 L2 距离。
         delta = np.diff(obs, axis=0)
@@ -64,27 +67,30 @@ def analyze(path):
         stats.append((path_length, total_reward, avg_step, meta["success"]))
         steps = to_rlds_steps(obs, actions, rewards, dones, timestamps)
         episodes.append(build_rlds_episode(steps, meta))
+        total_steps += len(obs)
 
     if not stats:
-        return [], []
+        return [], [], {"episodes": 0, "steps": 0}
 
     stats_arr = np.asarray(stats, dtype=np.float32)
-    return stats_arr, episodes
+    return stats_arr, episodes, {"episodes": len(stats_arr), "steps": total_steps}
 
 
-def summarize(stats, lane_info):
+def summarize(stats, lane_info, info, emit):
     # 打印轨迹统计摘要。
     path_len = stats[:, 0]
     total_reward = stats[:, 1]
     avg_step = stats[:, 2]
     success = stats[:, 3]
 
-    print("Trajectory summary")
-    print(f"Episodes: {len(stats)}")
-    print(f"Success rate: {np.mean(success) * 100:.1f}%")
-    print(f"Path length (avg): {np.mean(path_len):.2f}")
-    print(f"Total reward (avg): {np.mean(total_reward):.2f}")
-    print(f"Mean step (avg): {np.mean(avg_step):.2f}")
+    emit("Trajectory summary")
+    emit(f"Episodes: {len(stats)}")
+    emit(f"Success rate: {np.mean(success) * 100:.1f}%")
+    emit(f"Path length (avg): {np.mean(path_len):.2f}")
+    emit(f"Total reward (avg): {np.mean(total_reward):.2f}")
+    emit(f"Mean step (avg): {np.mean(avg_step):.2f}")
+    emit(f"Total steps: {info['steps']}")
+    emit(f"Avg steps per episode: {info['steps'] / max(info['episodes'], 1):.2f}")
 
 
 def plot_trajectories(path, out_path, max_episodes=20):
@@ -129,7 +135,7 @@ def plot_trajectories(path, out_path, max_episodes=20):
         ax_hist.set_xlabel("angle")
         ax_hist.set_ylabel("count")
 
-    stats, _ = analyze(path)
+    stats, _, _ = analyze(path)
     ax_len = ax[rows - 1, 0]
     ax_step = ax[rows - 1, 1]
     ax_len.hist(stats[:, 0], bins=10, alpha=0.8)
@@ -188,21 +194,47 @@ def main():
     parser.add_argument("--out", default="outputs/trajectories.png")
     parser.add_argument("--plot-samples", type=int, default=20)
     parser.add_argument("--export", default=None, help="Export RLDS episodes to JSON or JSONL.")
+    parser.add_argument("--log", default=None, help="Write summary output to a log file.")
     args = parser.parse_args()
 
-    stats, episodes = analyze(Path(args.data))
+    data_path = Path(args.data)
+    file_size = data_path.stat().st_size if data_path.exists() else 0
+    t0 = time.perf_counter()
+    stats, episodes, info = analyze(data_path)
+    t1 = time.perf_counter()
     if len(stats) == 0:
         print("No episodes found.")
         return
-    summarize(stats, None)
-    print(f"RLDS episodes loaded: {len(episodes)}")
+    log_file = None
+    if args.log:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if args.log in ("auto", "now"):
+            log_value = f"logs/run_{timestamp}.log"
+        else:
+            log_value = args.log.replace("{timestamp}", timestamp)
+        log_path = Path(log_value)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_file = log_path.open("w", encoding="utf-8")
+
+    def emit(message):
+        print(message)
+        if log_file is not None:
+            log_file.write(message + "\n")
+
+    summarize(stats, None, info, emit)
+    emit(f"File size (bytes): {file_size}")
+    emit(f"Read+analysis time (s): {t1 - t0:.3f}")
+    emit(f"RLDS episodes loaded: {len(episodes)}")
 
     if args.plot:
-        plot_trajectories(Path(args.data), Path(args.out), max_episodes=args.plot_samples)
-        print(f"Saved plot to {args.out}")
+        plot_trajectories(data_path, Path(args.out), max_episodes=args.plot_samples)
+        emit(f"Saved plot to {args.out}")
     if args.export:
         export_episodes(episodes, Path(args.export))
-        print(f"Exported RLDS episodes to {args.export}")
+        emit(f"Exported RLDS episodes to {args.export}")
+
+    if log_file is not None:
+        log_file.close()
 
 
 if __name__ == "__main__":
