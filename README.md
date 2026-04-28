@@ -36,22 +36,37 @@ python3 analyze_demo.py --plot --plot-samples 20
 python3 analyze_demo.py --export outputs/rlds_episodes.jsonl
 ```
 
-5) Save stats to SQLite
+5) Write stats to MatrixOne
 
 ```bash
-python3 analyze_demo.py --data data/robotic_arm.h5 --sqlite outputs/trajectory_stats.db
+mysql -h 127.0.0.1 -P 6001 -u root -p111 -e "CREATE DATABASE IF NOT EXISTS demo"
+python3 analyze_demo.py --data data/robotic_arm.h5 --mo --mo-database demo
 ```
 
-6) Write stats to InfluxDB (optional)
+To enable time-series queries over per-step timestamps:
 
 ```bash
-python3 -m pip install influxdb-client
-python3 analyze_demo.py \
+python3 analyze_demo.py --data data/robotic_arm.h5 --mo --mo-database demo --mo-steps
+```
+
+6) Similarity search + trajectory retrieval (MatrixOne + HDF5)
+
+```bash
+# Similarity search by episode id (uses embeddings stored in MatrixOne)
+python3 trajectory_search.py similar \
+  --mo-database demo \
   --data data/robotic_arm.h5 \
-  --influx-url http://localhost:8086 \
-  --influx-token YOUR_TOKEN \
-  --influx-org YOUR_ORG \
-  --influx-bucket YOUR_BUCKET
+  --episode-id ep_00001 \
+  --top-k 5
+
+# Filter/retrieve episodes and optionally export to JSONL
+python3 trajectory_search.py retrieve \
+  --mo-database demo \
+  --success 1 \
+  --min-path-length 5 \
+  --limit 10 \
+  --data data/robotic_arm.h5 \
+  --export outputs/retrieved_episodes.jsonl
 ```
 
 Outputs:
@@ -66,7 +81,7 @@ Outputs:
 For very large datasets, avoid building RLDS episodes in memory:
 
 ```bash
-python3 analyze_demo.py --data data/robotic_arm.h5 --stream --log auto --sqlite outputs/trajectory_stats.db
+python3 analyze_demo.py --data data/robotic_arm.h5 --stream --log auto --mo --mo-database demo
 ```
 
 Note: `--stream` disables `--export`.
@@ -134,4 +149,5 @@ python3 -m pip install tensorflow tensorflow-datasets
 
 ## Requirements
 
-See `requirements.txt`. The `rlds` dependency is optional.
+See `requirements.txt`. The `rlds` dependency is optional; `pymysql` is used for
+MatrixOne access from Python.

@@ -20,24 +20,23 @@ Analysis Pipeline (analyze_demo.py)
   - Anomaly detection + clustering
   - Lane stats (if present)
         |
-        +-------------------------------+
-        |                               |
-        v                               v
-SQLite (outputs/trajectory_stats.db)   InfluxDB (trajectory_metrics)
-  - runs table                          - run_metrics
-  - episodes table                      - episode_metrics
-  - lane stats (JSON text)              - lane_metrics (optional)
-        |                               |
-        v                               v
-Queries / Dashboards
-  - SQLite SQL                          - Flux / UI charts
-  - Reports & audits                    - Monitoring & trends
+        |
+        v
+MatrixOne (demo database)
+  - runs table
+  - episodes table
+  - trajectory_embeddings table
+  - trajectory_steps table (per-step time series)
+        |
+        v
+Queries
+  - SQL analytics
+  - similarity search (via CLI)
 ```
 
 ## Key Roles
 
 - **HDF5**: Large raw trajectory storage (fast sequential reads).
 - **RLDS**: Standardized step format for downstream ML.
-- **SQLite**: Offline analytics and reporting (episode-level).
-- **InfluxDB**: Time-series monitoring and dashboards.
+- **MatrixOne**: Unified storage for analytics + similarity search.
 - **Streaming mode**: Low-memory stats when data is large (no RLDS export).

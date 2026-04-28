@@ -1,15 +1,21 @@
 # Query Guide
 
-This guide provides ready-to-run queries for SQLite and InfluxDB to report on
-trajectory analysis results, including action quality, anomalies, clustering,
-and optional lane statistics.
+This guide provides ready-to-run queries for MatrixOne to report on trajectory
+analysis results, including action quality, anomalies, clustering, and optional
+lane statistics.
 
-## SQLite (offline analytics)
+## MatrixOne (analytics)
 
-Open the database:
+Connect with the MySQL client:
 
 ```bash
-sqlite3 outputs/trajectory_stats.db
+mysql -h 127.0.0.1 -P 6001 -u root -p111
+```
+
+Use the target database (e.g. demo):
+
+```sql
+USE demo;
 ```
 
 ### Latest run info
@@ -62,64 +68,66 @@ WHERE lane_counts IS NOT NULL
 LIMIT 10;
 ```
 
-## InfluxDB (Flux)
+## Time-series queries (per-step timestamps)
 
-Make sure InfluxDB is running and data has been written to bucket
-`trajectory_metrics`.
+Requires writing per-step metrics with `--mo-steps`.
 
-### Latest run metrics
+### Steps per time bucket (timestamp floored)
 
-```flux
-from(bucket: "trajectory_metrics")
-  |> range(start: -7d)
-  |> filter(fn: (r) => r._measurement == "run_metrics")
-  |> last()
+```sql
+SELECT FLOOR(timestamp) AS t, COUNT(*) AS steps
+FROM trajectory_steps
+GROUP BY t
+ORDER BY t;
 ```
 
-### Path length distribution
+### Average reward per time bucket
 
-```flux
-from(bucket: "trajectory_metrics")
-  |> range(start: -7d)
-  |> filter(fn: (r) => r._measurement == "episode_metrics" and r._field == "path_length")
-  |> histogram(bins: 10)
+```sql
+SELECT FLOOR(timestamp) AS t, AVG(reward) AS avg_reward
+FROM trajectory_steps
+GROUP BY t
+ORDER BY t;
 ```
 
-### Lowest action quality (Top 10)
+### Step magnitude trend
 
-```flux
-from(bucket: "trajectory_metrics")
-  |> range(start: -7d)
-  |> filter(fn: (r) => r._measurement == "episode_metrics" and r._field == "quality_score")
-  |> sort(columns: ["_value"], desc: false)
-  |> limit(n: 10)
+```sql
+SELECT FLOOR(timestamp) AS t, AVG(step_mag) AS avg_step_mag
+FROM trajectory_steps
+GROUP BY t
+ORDER BY t;
 ```
 
-### Anomaly count trend
+### Terminal events over time
 
-```flux
-from(bucket: "trajectory_metrics")
-  |> range(start: -7d)
-  |> filter(fn: (r) => r._measurement == "episode_metrics" and r._field == "anomaly")
-  |> aggregateWindow(every: 1d, fn: sum)
+```sql
+SELECT FLOOR(timestamp) AS t, SUM(is_terminal) AS terminal_steps
+FROM trajectory_steps
+GROUP BY t
+ORDER BY t;
 ```
 
-### Cluster distribution
+## Trajectory search (CLI)
 
-```flux
-from(bucket: "trajectory_metrics")
-  |> range(start: -7d)
-  |> filter(fn: (r) => r._measurement == "episode_metrics" and r._field == "cluster_id")
-  |> group(columns: ["_value"])
-  |> count()
+Similarity search by episode id:
+
+```bash
+python3 trajectory_search.py similar \
+  --mo-database demo \
+  --data data/trajectories.h5 \
+  --episode-id ep_00001 \
+  --top-k 5
 ```
 
-### Lane stats (if lane_metrics exists)
+Filter and export trajectories:
 
-```flux
-from(bucket: "trajectory_metrics")
-  |> range(start: -7d)
-  |> filter(fn: (r) => r._measurement == "lane_metrics" and r._field == "steps")
-  |> group(columns: ["lane_id"])
-  |> sum()
+```bash
+python3 trajectory_search.py retrieve \
+  --mo-database demo \
+  --success 1 \
+  --min-path-length 5 \
+  --limit 10 \
+  --data data/trajectories.h5 \
+  --export outputs/retrieved_episodes.jsonl
 ```

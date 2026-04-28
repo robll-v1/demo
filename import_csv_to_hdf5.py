@@ -5,6 +5,40 @@ from pathlib import Path
 import numpy as np
 
 
+def _parse_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def clean_rows(rows, has_lane):
+    # 轻量清洗：剔除缺失/非法数值行。
+    cleaned = []
+    dropped = 0
+    for row in rows:
+        required = ["timestamp", "x", "y", "velocity"]
+        values = {}
+        valid = True
+        for key in required:
+            val = _parse_float(row.get(key))
+            if val is None or not np.isfinite(val):
+                valid = False
+                break
+            values[key] = val
+        if not valid:
+            dropped += 1
+            continue
+        if has_lane:
+            lane_val = _parse_float(row.get("lane"))
+            if lane_val is None or not np.isfinite(lane_val):
+                dropped += 1
+                continue
+            values["lane"] = lane_val
+        cleaned.append(values)
+    return cleaned, dropped
+
+
 def load_csv_episode(path):
     # 读取单个 CSV 并转换为一条 episode。
     rows = []
@@ -22,21 +56,26 @@ def load_csv_episode(path):
         missing_list = ", ".join(sorted(missing))
         raise ValueError(f"Missing required columns in {path}: {missing_list}")
     has_lane = "lane" in rows[0]
+    cleaned, dropped = clean_rows(rows, has_lane)
+    if dropped:
+        print(f"[clean] {path.name}: dropped {dropped} invalid rows")
+    if not cleaned:
+        raise ValueError(f"No valid rows after cleaning in {path}")
     observations = []
     timestamps = []
 
-    for row in rows:
+    for row in cleaned:
         # 观测向量：x, y, velocity (+ lane 可选)。
         obs = [
-            float(row["x"]),
-            float(row["y"]),
-            float(row["velocity"]),
+            row["x"],
+            row["y"],
+            row["velocity"],
         ]
         if has_lane:
-            obs.append(float(row["lane"]))
+            obs.append(row["lane"])
         observations.append(obs)
         # 时间戳按 float 保存，方便后续导出。
-        timestamps.append(float(row["timestamp"]))
+        timestamps.append(row["timestamp"])
 
     observations = np.asarray(observations, dtype=np.float32)
     actions = np.zeros((len(observations), 2), dtype=np.float32)

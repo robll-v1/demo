@@ -1,4 +1,5 @@
--- Test case data for SQLite
+-- Test case data for MatrixOne
+USE demo;
 DELETE FROM episodes;
 DELETE FROM runs;
 

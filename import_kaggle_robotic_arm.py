@@ -5,6 +5,34 @@ from pathlib import Path
 import numpy as np
 
 
+def _parse_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def clean_rows(rows):
+    # 轻量清洗：剔除缺失/非法数值行。
+    cleaned = []
+    dropped = 0
+    keys = ["Axis_0_Angle", "Axis_1_Angle", "Axis_2_Angle"]
+    for row in rows:
+        values = {}
+        valid = True
+        for key in keys:
+            val = _parse_float(row.get(key))
+            if val is None or not np.isfinite(val):
+                valid = False
+                break
+            values[key] = val
+        if not valid:
+            dropped += 1
+            continue
+        cleaned.append(values)
+    return cleaned, dropped
+
+
 def load_rows(path):
     rows = []
     with path.open("r", encoding="utf-8") as f:
@@ -18,7 +46,12 @@ def load_rows(path):
     if missing:
         missing_list = ", ".join(sorted(missing))
         raise ValueError(f"Missing required columns in {path}: {missing_list}")
-    return rows
+    cleaned, dropped = clean_rows(rows)
+    if dropped:
+        print(f"[clean] {path.name}: dropped {dropped} invalid rows")
+    if not cleaned:
+        raise ValueError(f"No valid rows after cleaning in {path}")
+    return cleaned
 
 
 def split_episodes(rows, episode_length, max_episodes):
