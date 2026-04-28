@@ -1,4 +1,15 @@
 data/
 outputs/
+logs/
+datasets/
 __pycache__/
 *.pyc
+*.pyo
+*.egg-info/
+.env
+token
+*.db
+*.sqlite
+*.h5
+*.hdf5
+.DS_Store
